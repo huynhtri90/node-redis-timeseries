@@ -34,20 +34,30 @@ TimeSeries.prototype.months  = function(i) { return i*(this.weeks(4)+this.days(2
  * `timestamp` should be in seconds, and defaults to current time.
  * `increment` should be an integer, and defaults to 1
  */
-TimeSeries.prototype.recordHit = function(key, timestamp, increment) {
+TimeSeries.prototype.recordHit = function(key, timestamp, newValue, increment) {
   var self = this;
-
+    
   Object.keys(this.granularities).forEach(function(gran) {
     var properties = self.granularities[gran],
         keyTimestamp = getRoundedTime(properties.ttl, timestamp),
         tmpKey = [self.keyBase, key, gran, keyTimestamp].join(':'),
         hitTimestamp = getRoundedTime(properties.duration, timestamp);
-
-   self.pendingMulti.hincrby(tmpKey, hitTimestamp, Math.floor(increment || 1));
-   self.pendingMulti.expireat(tmpKey, keyTimestamp + 2 * properties.ttl);
+   
+   var actualIncrement = increment;
+      
+   self.redis.hgetall(tmpKey, (err, data) => {
+      if (err != null || data == null){
+         actualIncrement = newValue;
+      }   
+      else {
+          if (data[hitTimestamp.toString()] == null || data[hitTimestamp.toString()] == undefined)
+              actualIncrement = newValue;
+      } 
+       
+     self.pendingMulti.hincrby(tmpKey, hitTimestamp, Math.floor(actualIncrement || 1));
+     self.pendingMulti.expireat(tmpKey, keyTimestamp + 2 * properties.ttl);
+   });
   });
-
-  return this;
 };
 
 /*
